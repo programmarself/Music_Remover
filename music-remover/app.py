@@ -20,29 +20,6 @@ logger = logging.getLogger(__name__)
 # Set page config
 st.set_page_config(page_title="🎵 Music Remover AI", layout="wide")
 
-# Check and install FFmpeg if not available
-def ensure_ffmpeg():
-    try:
-        subprocess.run(["ffmpeg", "-version"], capture_output=True, check=True)
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        st.warning("FFmpeg not found. Installing...")
-        try:
-            import google.colab
-            !apt install ffmpeg -y
-        except:
-            try:
-                if sys.platform == "win32":
-                    !conda install -y ffmpeg -c conda-forge
-                else:
-                    !apt-get install ffmpeg -y
-            except:
-                st.error("Failed to install FFmpeg automatically. Please install it manually.")
-                return False
-    return True
-
-if not ensure_ffmpeg():
-    st.error("FFmpeg installation failed. The app may not work properly.")
-
 # Title and description
 st.title("🎵 Music Remover AI Agent")
 st.write("Upload a video or audio file to remove music while preserving voice")
@@ -59,6 +36,22 @@ with st.sidebar:
     auto_adjust = st.checkbox("Auto-adjust parameters based on content", True)
     preserve_pitch = st.checkbox("Preserve original vocal pitch", True)
     enhance_voice = st.checkbox("Enhance voice clarity", False)
+
+def check_ffmpeg():
+    """Check if FFmpeg is available"""
+    try:
+        subprocess.run(["ffmpeg", "-version"], 
+                      stdout=subprocess.PIPE, 
+                      stderr=subprocess.PIPE,
+                      check=True)
+        return True
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return False
+
+# Check for FFmpeg at startup
+if not check_ffmpeg():
+    st.error("FFmpeg is not installed. Please ensure it's available in your environment.")
+    st.stop()
 
 def separate_with_demucs(input_bytes, sr=44100):
     """Use Facebook's Demucs model for separation"""
@@ -94,26 +87,37 @@ def process_audio(input_bytes, method="Demucs"):
 def convert_to_wav(input_bytes, input_format):
     """Convert any audio to WAV format in memory"""
     try:
-        if input_format in ['mp4', 'avi', 'mov']:
-            # For video files, we need to extract audio first
-            with tempfile.NamedTemporaryFile(suffix=f".{input_format}", delete=False) as tmp_video:
-                tmp_video.write(input_bytes)
-                tmp_video_path = tmp_video.name
-            
-            # Extract audio using FFmpeg
-            tmp_audio_path = tmp_video_path + ".wav"
-            cmd = f"ffmpeg -i {tmp_video_path} -vn -acodec pcm_s16le -ar 44100 -ac 1 {tmp_audio_path}"
-            subprocess.run(cmd, shell=True, check=True)
-            
-            with open(tmp_audio_path, "rb") as f:
-                audio_bytes = f.read()
-            
-            os.unlink(tmp_video_path)
-            os.unlink(tmp_audio_path)
-            return audio_bytes
-        else:
-            # For audio files, just read and return
-            return input_bytes
+        with tempfile.NamedTemporaryFile(suffix=f".{input_format}", delete=False) as tmp_input:
+            tmp_input.write(input_bytes)
+            tmp_input_path = tmp_input.name
+        
+        tmp_output_path = tmp_input_path + ".wav"
+        
+        # Use FFmpeg to convert
+        cmd = [
+            "ffmpeg",
+            "-i", tmp_input_path,
+            "-vn",
+            "-acodec", "pcm_s16le",
+            "-ar", "44100",
+            "-ac", "1",
+            "-y",  # Overwrite output file if exists
+            tmp_output_path
+        ]
+        
+        subprocess.run(cmd, check=True)
+        
+        with open(tmp_output_path, "rb") as f:
+            result = f.read()
+        
+        # Clean up
+        os.unlink(tmp_input_path)
+        os.unlink(tmp_output_path)
+        
+        return result
+    except subprocess.CalledProcessError as e:
+        logger.error(f"FFmpeg conversion failed: {e.stderr}")
+        raise
     except Exception as e:
         logger.error(f"Error converting to WAV: {str(e)}")
         raise
