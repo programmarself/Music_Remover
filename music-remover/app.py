@@ -9,7 +9,6 @@ from demucs.pretrained import get_model
 from demucs.apply import apply_model
 import soundfile as sf
 import subprocess
-import sys
 from io import BytesIO
 import logging
 
@@ -24,6 +23,25 @@ st.set_page_config(page_title="🎵 Music Remover AI", layout="wide")
 st.title("🎵 Music Remover AI Agent")
 st.write("Upload a video or audio file to remove music while preserving voice")
 
+def check_ffmpeg():
+    """Check if FFmpeg is available"""
+    try:
+        subprocess.run(["ffmpeg", "-version"], 
+                      stdout=subprocess.PIPE, 
+                      stderr=subprocess.PIPE,
+                      check=True)
+        return True
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return False
+
+# Check for FFmpeg
+if not check_ffmpeg():
+    st.error("""
+    FFmpeg is required but not found. 
+    Please add 'ffmpeg' to your packages.txt file in the repository.
+    """)
+    st.stop()
+
 # Sidebar for additional options
 with st.sidebar:
     st.header("Settings")
@@ -36,22 +54,6 @@ with st.sidebar:
     auto_adjust = st.checkbox("Auto-adjust parameters based on content", True)
     preserve_pitch = st.checkbox("Preserve original vocal pitch", True)
     enhance_voice = st.checkbox("Enhance voice clarity", False)
-
-def check_ffmpeg():
-    """Check if FFmpeg is available"""
-    try:
-        subprocess.run(["ffmpeg", "-version"], 
-                      stdout=subprocess.PIPE, 
-                      stderr=subprocess.PIPE,
-                      check=True)
-        return True
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return False
-
-# Check for FFmpeg at startup
-if not check_ffmpeg():
-    st.error("FFmpeg is not installed. Please ensure it's available in your environment.")
-    st.stop()
 
 def separate_with_demucs(input_bytes, sr=44100):
     """Use Facebook's Demucs model for separation"""
@@ -85,7 +87,7 @@ def process_audio(input_bytes, method="Demucs"):
         raise
 
 def convert_to_wav(input_bytes, input_format):
-    """Convert any audio to WAV format in memory"""
+    """Convert any audio to WAV format"""
     try:
         with tempfile.NamedTemporaryFile(suffix=f".{input_format}", delete=False) as tmp_input:
             tmp_input.write(input_bytes)
@@ -101,7 +103,7 @@ def convert_to_wav(input_bytes, input_format):
             "-acodec", "pcm_s16le",
             "-ar", "44100",
             "-ac", "1",
-            "-y",  # Overwrite output file if exists
+            "-y",
             tmp_output_path
         ]
         
@@ -173,7 +175,6 @@ if uploaded_file is not None:
         st.error(f"An error occurred during processing: {str(e)}")
         logger.error(f"Processing error: {str(e)}")
 
-# Add some agent-like behavior
 if uploaded_file and st.button("Ask AI Agent for processing advice"):
     st.info("""
     🎙️ AI Agent Analysis:
