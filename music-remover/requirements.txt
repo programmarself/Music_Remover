@@ -1,0 +1,9 @@
+streamlit
+librosa
+numpy
+noisereduce
+demucs
+torch
+torchaudio
+pydub
+soundfile
